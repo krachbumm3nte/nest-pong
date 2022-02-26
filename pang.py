@@ -1,6 +1,4 @@
 import sys
-from turtle import position
-from unittest import result
 import nest
 import argparse
 import pong
@@ -12,50 +10,49 @@ import logging
 import gzip
 import datetime
 
-from pong_net import POLL_TIME, Network
+from pong_net import POLL_TIME, PongNet
 
 
 
 
 class AIPong:
-    """Combines neural network and pong game.
-
-        Args:
-            num_games (int): Maximum number of games to play.
+    """A class to run and store pong simulations of two competing spiking neural networks
     """
 
-    def __init__(self, num_games=20000):
+    def __init__(self):
         self.game = pong.GameOfPong()
-        self.left_network = Network(with_noise=False)
-        self.left_network.verbose = True
-        self.right_network = Network(with_noise=True)
-        self.right_network.verbose = False
-
-        self.num_games = num_games
+        # competitors are a network with background noise added to its motor neurons, and one without
+        self.left_network = PongNet(with_noise=False)
+        self.right_network = PongNet(with_noise=True)
 
 
-    def run_games(self, folder="", max_runs=np.inf):
-        """Run games by polling network and stepping through game.
+
+    def run_games(self, folder="", max_runs=5000):
+        """run a simulation of pong games and store the results
 
         Args:
-            folder (string): Folder to save to.
-            max_runs (int): Maximum number of iterations.
+            folder (str, optional): output folder for simulation data (performance of both networks and game state at every iteration). Defaults to current timestamp (YYYY-MM-DD-HH-MM-SS).
+            max_runs (int, optional): Number of iterations to simulate. Defaults to 5000.
         """
-        self.run = 0
-        expdir = os.path.join(folder, '{0:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now()))
-        os.mkdir(expdir)
+        if folder == "":
+            folder = '{0:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now())
+        if os.path.exists(folder):
+            print(f"output folder {folder} already exists!")
+            sys.exit()   
+        os.mkdir(folder)
 
 
         self.gamestate_history = []
 
         start_time = time.time()
         l_score, r_score = 0, 0
+        self.run = 0
 
         while self.run < max_runs:
             self.ball_cell = self.game.ball.get_cell()[1]
 
             if self.run % 100 == 0:
-                logging.info(f"{round(time.time() - start_time, 2)}: Run {self.run}, score: {l_score, r_score}, mean reward: {np.mean(self.left_network.mean_reward)}, {np.mean(self.right_network.mean_reward)}") 
+                logging.info(f"{round(time.time() - start_time, 2)}: Run {self.run}, score: {l_score, r_score}, mean rewards: {round(np.mean(self.left_network.mean_reward))}, {round(np.mean(self.right_network.mean_reward))}") 
             
             self.left_network.set_input_spiketrain(self.ball_cell, self.run)
             self.right_network.set_input_spiketrain(self.ball_cell, self.run)
@@ -92,21 +89,22 @@ class AIPong:
                 l_score += 1
         
         end_time = time.time()
+        logging.info(f"simulation of {max_runs} runs complete after: {datetime.timedelta(seconds=end_time-start_time)}")
+
 
         logging.info("saving game data...")
-        with open(os.path.join(expdir, "gamestate.pkl"), "wb") as f:
+        with open(os.path.join(folder, "gamestate.pkl"), "wb") as f:
             pickle.dump(self.gamestate_history, f)
 
 
         logging.info("saving performance data...")
-        with gzip.open(os.path.join(expdir, f"data_right.pkl.gz"), "w") as file:
+        with gzip.open(os.path.join(folder, f"data_right.pkl.gz"), "w") as file:
             pickle.dump(self.right_network.get_performance_data(), file)
 
-        with gzip.open(os.path.join(expdir, f"data_left.pkl.gz"), "w") as file:
+        with gzip.open(os.path.join(folder, f"data_left.pkl.gz"), "w") as file:
             pickle.dump(self.left_network.get_performance_data(), file)
 
-        logging.info(
-            f"simulation of {max_runs} runs complete after: {datetime.timedelta(seconds=end_time-start_time)}")
+        logging.info("done.")
 
 
 if __name__ == "__main__":
