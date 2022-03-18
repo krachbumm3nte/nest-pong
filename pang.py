@@ -12,9 +12,6 @@ import datetime
 
 from pong_net import POLL_TIME, PongNet
 
-
-
-
 class AIPong:
     """A class to run and store pong simulations of two competing spiking neural networks
     """
@@ -78,7 +75,7 @@ class AIPong:
 
             self.run += 1
 
-            self.gamestate_history.append((self.game.ball.get_pos(), self.game.left_paddle.get_pos(), self.game.right_paddle.get_pos(), (l_score, r_score)))
+            self.gamestate_history.append((self.game.ball.get_pos(), self.game.left_paddle.get_pos(), self.game.right_paddle.get_pos(), l_score, r_score))
             
 
             if self.game.result == pong.RIGHT_WIN:

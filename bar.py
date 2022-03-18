@@ -7,9 +7,9 @@ import numpy as np
 #: int: Amount of time the network is simulated in milliseconds.
 POLL_TIME = 200
 #: int: Number of spikes for input spiketrain.
-NO_SPIKES = 20
+N_INPUT_SPIKES = 20
 #: float: Inter-Spike Interval (ISI) of input spiketrain.
-ISI = POLL_TIME/NO_SPIKES
+ISI = POLL_TIME/N_INPUT_SPIKES
 #: float: Standard deviation of Gaussian current noise in picoampere.
 BG_STD = 200.
 #: float: Initial mean weight when applying noise to motor neurons.
@@ -18,6 +18,13 @@ MEAN_WEIGHT = 1300.
 LEARNING_RATE = 0.7
 #: dict: reward to be applied to synapses in dependence on the distance between target and prediction.
 REWARDS_DICT = {0: 1., 1: 0.7, 2: 0.4, 3: 0.1}
+
+DOPA_SIGNAL_FACTOR = 28
+
+MAX_DOPA_SPIKES = 6
+
+
+
 DOPA_ISI = 3.
 
 
@@ -57,7 +64,7 @@ class PongNet(object):
         self.vt = nest.Create("volume_transmitter")
         nest.Connect(self.dopa_parrot, self.vt)
         # nest.SetDefaults("stdp_dopamine_synapse", {"vt": self.vt.get("global_id")})
-        nest.SetDefaults("stdp_dopamine_synapse", {"vt": self.vt.get("global_id"), "tau_c": 80, "tau_n": 35, "tau_plus": 40., "Wmin": 1150, "Wmax": 1550, "b": 0.008, "A_plus": 0.85})
+        nest.SetDefaults("stdp_dopamine_synapse", {"vt": self.vt.get("global_id"), "tau_c": 80, "tau_n": 35, "tau_plus": 40., "Wmin": 1150, "Wmax": 1550, "b": 0.02, "A_plus": 0.85})
         # nest.SetDefaults("stdp_dopamine_synapse", {"vt": self.vt.get("global_id"), "Wmin": 1150, "Wmax": 1550})
 
         # Defaults: {'A_minus': 1.5, 'A_plus': 1.0, 'b': 0.0, 'c': 0.0, 'delay': 1.0, 'has_delay': True, 'n': 0.0, 'num_connections': 0, 'receptor_type': 0, 
@@ -137,43 +144,52 @@ class PongNet(object):
     def reward_by_move(self, biological_time):
         """ Reward network based on how close winning neuron and desired output are.
         """
-        distance = np.abs(self.winning_neuron - self.target_index)
+        
+        rates = self.get_rates()
+        target_rate = rates[self.target_index]
+        # The number of dopaminergic spikes derived from the number of spikes at the desired output
+        # divided by the total number of spikes from the output layer.
+        sum_rates = max(sum(rates), 1)
 
-        if distance in REWARDS_DICT:
-            reward = REWARDS_DICT[distance]
-        else:
-            reward = 0
+        n_spikes = int((target_rate/sum_rates) * DOPA_SIGNAL_FACTOR)
+        # cap the dopaminergic signal to avoid continually increasing synaptic weights
+        n_spikes = min(MAX_DOPA_SPIKES, n_spikes)
 
-        n_spikes = int(reward*5)
-        dopa_spiketrain = [(biological_time+1) * POLL_TIME + 1 + x *
-                           DOPA_ISI for x in range(n_spikes)]
-
-        # print(distance, reward, dopa_spiketrain)
+        dopa_spiketrain = [biological_time + 1 + x * DOPA_ISI for x in range(n_spikes)]
         self.dopa_signal.spike_times = dopa_spiketrain
 
+        reward = n_spikes / MAX_DOPA_SPIKES
         self.mean_reward[self.target_index] = (
             self.mean_reward[self.target_index] + reward) / 2
 
-        # Store performance data at every reward update
         self.weight_history.append(self.get_all_weights())
         self.mean_reward_history.append(copy(self.mean_reward))
-        self.performance_history.append(copy(self.performance))
+        #self.performance_history.append(copy(self.performance))
 
 
         logging.debug(
-            f"Applying reward={reward}, mean reward={self.mean_reward[self.target_index]}, success={reward}, distance={distance}")
+            f"Applying reward={reward}, mean reward={self.mean_reward[self.target_index]}, success={reward}")
         logging.debug(f"Average mean reward: {np.mean(self.mean_reward)}")
 
-    def set_input_spiketrain(self, input_cell, time):
-        """Set spike train encoding position of ball along y-axis.
+    def set_input_spiketrain(self, input_cell, biological_time):
+        """Set a spike train to the input neuron encoding the current ball position along y-axis.
 
         Args:
-            input_cell (int): Input unit that corresponds to ball position.
-            run (int): current iteration for correct spike time scaling
+            input_cell (int): Index of the input neuron that corresponds to ball position.
+            biological_time (float): current biological time within the NEST simulator
         """
         self.target_index = input_cell
-        self.input_train = [time + self.input_t_offset + x * ISI for x in range(NO_SPIKES)]
-        self.input_train = [np.round(x, 1) for x in self.input_train]
+        self.input_train = [biological_time + self.input_t_offset + i * ISI for i in range(N_INPUT_SPIKES)]
+        # round spike timings to the first decimal to avoid conflicts with simulation timesteps
+        self.input_train = [np.round(x, 1) for x in self.input_train] 
+        
+        
+        #TODO: why doesnt this work?
+        """
+        self.input_generators.spike_times = []
+        self.input_generators[input_cell].spike_times = self.input_train
+        """
+        
         for input_neuron in range(self.num_neurons):
             nest.SetStatus(self.input_generators[input_neuron],
                            {'spike_times': []})

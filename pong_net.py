@@ -42,6 +42,7 @@ class PongNet(object):
         self.mean_reward_history = []
         self.performance_history = []
 
+
         self.input_generators = nest.Create(
             "spike_generator", self.num_neurons)
         self.input_neurons = nest.Create("parrot_neuron", self.num_neurons)
@@ -126,8 +127,7 @@ class PongNet(object):
             float: scaled reward that can be applied to the STDP computation
         """
         scaled_reward = bare_reward - self.mean_reward[index]
-        self.mean_reward[index] = float(
-            self.mean_reward[index] + scaled_reward / 2.0)
+        self.mean_reward[index] = (self.mean_reward[index] + scaled_reward) / 2.0
         self.performance[index] = np.ceil(bare_reward)
         return scaled_reward
 

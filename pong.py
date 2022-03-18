@@ -7,13 +7,13 @@ LEFT_WIN = -1
 RIGHT_WIN = +1
 NO_WIN = 0
 
-MOVE_UP = +1
 MOVE_DOWN = -1
+MOVE_UP = +1
 DONT_MOVE = 0
 
 
 class GameObject:
-    def __init__(self, game, x_pos=0.5, y_pos=0.5, velocity=0.2, direction=[0,0]):
+    def __init__(self, game, x_pos=0.5, y_pos=0.5, velocity=0.2, direction=[0, 0]):
         """Base class for Ball and Paddle, containing basic functionality for an object inside a game.
 
         Args:
@@ -22,7 +22,7 @@ class GameObject:
             y_pos (float, optional): Initial y position in unit length.. Defaults to 0.5.
             velocity (float, optional): Change in position per iteration. Defaults to 0.2.
             direction (list, optional): direction vector. Defaults to [0,0].
-        """        
+        """
         self.x_pos = x_pos
         self.y_pos = y_pos
         self.velocity = velocity
@@ -61,35 +61,25 @@ class Ball(GameObject):
                  velocity=0.025,
                  direction=[-1 / 2., 1 / 2.],
                  radius=0.025):
-        GameObject.__init__(self, game, x_pos, y_pos, velocity, direction)
+        super().__init__(game, x_pos, y_pos, velocity, direction)
         self.ball_radius = radius  # unit length
         self.update_cell()
 
 
 class Paddle(GameObject):
-    """Class representing either of the paddles.
+    """Class representing the paddles on either end of the playing field.
 
         Args:
-            direction (float, int): +1 for up, -1 for down, 0 for no movement.
+            direction (int, optional): Either -1, 0 or 1 for downward, neutral or upwards motion respectively. Defaults to 0.
             left (boolean): If True, paddle is placed on the left side of the board, otherwise on the right side
 
         For other args, see :class:`GameObject`.
     """
-    paddle_length = 0.1  # unit length
+    paddle_length = 0.2  # unit length
 
     def __init__(self, game, left, y_pos=0.5, velocity=0.05, direction=0):
-        """Class representing the paddles on either end of the playing field.
-
-        Args:
-            game (GameOfPong): Game instance
-            left (boolean): if True, paddle is placed on the left edge of the playing field, else on the right edge
-            y_pos (float, optional): starting position on the y-axis. Defaults to 0.5.
-            velocity (float, optional): change in Position per game cycle. Defaults to 0.05.
-            direction (int, optional): Either -1, 0 or 1 for downward, neutral or upwards motion respectively. Defaults to 0.
-        """
-
         x_pos = 0. if left else game.x_length
-        GameObject.__init__(self, game, x_pos, y_pos, velocity,
+        super().__init__(game, x_pos, y_pos, velocity,
                             direction)
         self.update_cell()
 
@@ -111,11 +101,12 @@ class GameOfPong(object):
             y_grid (int): Number of cells to discretize y-axis into.
     """
 
-    def __init__(self, x_grid=32, y_grid=20):
-        self.x_length = 1.6  # length in x-direction in unit length
-        self.y_length = 1.0  # length in y-direction in unit length
-        self.x_grid = x_grid
-        self.y_grid = y_grid
+    x_grid = 32
+    y_grid = 20
+    x_length = 1.6  # length in x-direction in unit length
+    y_length = 1.0  # length in y-direction in unit length
+
+    def __init__(self):
         self.right_paddle = Paddle(self, False)
         self.left_paddle = Paddle(self, True)
 
@@ -123,6 +114,12 @@ class GameOfPong(object):
         self.result = 0
 
     def reset_ball(self, towards_left=False):
+        """reset the ball position to the center of the field after a goal
+
+        Args:
+            towards_left (bool, optional): if True, ball direction is initialized towards the left side of the field, 
+            otherwise towards the right. Defaults to False.
+        """
         initial_vx = 0.5 + 0.5 * np.random.random()
         initial_vy = 1. - initial_vx
         if towards_left:
@@ -130,7 +127,7 @@ class GameOfPong(object):
         initial_vy *= choice([-1., 1.])
 
         self.ball = Ball(self, direction=[initial_vx, initial_vy])
-
+        self.ball.y_pos = np.random.random() * self.y_length
 
     def update_ball_direction(self):
         """In case of a collision, update the direction of the ball. Also determine if the ball is in either player's net.
@@ -139,21 +136,21 @@ class GameOfPong(object):
             Either NO_WIN, LEFT_WIN or RIGHT_WIN.
         """
         if self.ball.y_pos + self.ball.ball_radius >= self.y_length:  # upper edge
-            self.ball.direction[1] *= -1
+            self.ball.direction[1] = -1 * abs(self.ball.direction[1])
             return NO_WIN
         if self.ball.y_pos - self.ball.ball_radius <= 0:  # lower edge
-            self.ball.direction[1] *= -1
+            self.ball.direction[1] = abs(self.ball.direction[1])
             return NO_WIN
         # left paddle/wall
         if self.ball.x_pos - self.ball.ball_radius <= 0:
             if self.left_paddle.y_pos - Paddle.paddle_length / 2 <= self.ball.y_pos <= self.left_paddle.y_pos + Paddle.paddle_length / 2:
-                self.ball.direction[0] *= -1
+                self.ball.direction[0] = abs(self.ball.direction[0])
             else:
                 return RIGHT_WIN
         # right paddle/wall
         if self.ball.x_pos + self.ball.ball_radius >= self.x_length:
             if self.right_paddle.y_pos - Paddle.paddle_length / 2 <= self.ball.y_pos <= self.right_paddle.y_pos + Paddle.paddle_length / 2:
-                self.ball.direction[0] *= -1
+                self.ball.direction[0] = -1 * abs(self.ball.direction[0])
             else:
                 return LEFT_WIN
         return NO_WIN

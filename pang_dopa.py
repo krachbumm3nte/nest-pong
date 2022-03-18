@@ -1,5 +1,62 @@
-import sys
+# -*- coding: utf-8 -*-
+#
+# pynest_example_template.py
+#
+# This file is part of NEST.
+#
+# Copyright (C) 2004 The NEST Initiative
+#
+# NEST is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 2 of the License, or
+# (at your option) any later version.
+#
+# NEST is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with NEST.  If not, see <http://www.gnu.org/licenses/>.
+
+r"""Application training networks to play pong against each other 
+----------------------------------------------------------------
+This program makes two spiking neural networks of two layers each compete
+against each other in encoding an input-output mapping within their weights.
+
+The script is centered around a simulation of the classic game Pong
+in which the vertical position of the ball determines the input for both
+'players' and their output activation after a predetermined simulation
+time changes the paddle positions within the game. 
+
+The output of the script is stored in three .pkl files which contain information
+about the state of the game, the left network and the right network respectively
+after every simulation step which can be used to visualize the output 
+(e.g. using :doc:`generate_gif.py <./generate_gif.py>`).
+
+The Idea for this simulation, as well as the core of the R-STDP and Pong implementation are from
+[1]_ and were created by Timo Wunderlich (The original implementation can be found 
+'here <https://github.com/electronicvisions/model-sw-pong>'_). 
+The visualization and implementation of dopaminergic learning, as well as changes to the
+existing codebase come from Johannes Gille (2022).
+
+See Also
+---------
+:doc:`code for visualizing the output <./generate_gif.py>`
+
+
+References
+----------
+.. [1] Wunderlich, T., Kungl, A. F., Müller, E., Hartel, A., Stradmann, Y., Aamir, 
+       S. A., ... & Petrovici, M. A. (2019). Demonstrating advantages of neuromorphic 
+       computation: a pilot study. Frontiers in neuroscience, 13, 260.
+       https://doi.org/10.3389/fnins.2019.00260
+
+:Authors: Johannes Gille
+"""
+
 import nest
+import sys
 import argparse
 import pong
 import numpy as np
@@ -12,71 +69,66 @@ import datetime
 import matplotlib.pyplot as plt
 import generate_gif
 
-from pong_net_dopa import POLL_TIME, PongNet
-
-
+from networks import POLL_TIME, PongNetDopa,  PongNetRSTDP
 
 
 class AIPong:
-    """A class to run and store pong simulations of two competing spiking neural networks
-    """
+    def __init__(self, p1, p2, out_dir=""):
+        """A class to run and store pong simulations of two competing spiking neural networks
 
-    def __init__(self):
+        Args:
+            p1 (PongNet): network to play on the left side.
+            p2 (PongNet): network to play on the right side.
+            out_folder (str, optional): name of the output folder. Defaults to current time stamp (YYYY-mm-dd-HH-MM-SS).
+        """
         self.game = pong.GameOfPong()
-        # competitors are a network with background noise added to its motor neurons, and one without
-        self.left_network = PongNet(with_noise=False)
-        #self.right_network = PongNet(with_noise=True)
+        self.player1 = p1
+        self.player2 = p2
 
+        if out_dir == "":
+            out_dir = '{0:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now())
+        if os.path.exists(out_dir):
+            print(f"output folder {out_dir} already exists!")
+            sys.exit()
+        os.mkdir(out_dir)
+        self.out_dir = out_dir
 
+        logging.info(f"setup complete for a pong game between: {p1} and {p2}.")
 
-    def run_games(self, folder="", max_runs=5000):
+    def run_games(self,  max_runs=15000):
         """run a simulation of pong games and store the results
 
         Args:
-            folder (str, optional): output folder for simulation data (performance of both networks and game state at every iteration). Defaults to current timestamp (YYYY-MM-DD-HH-MM-SS).
-            max_runs (int, optional): Number of iterations to simulate. Defaults to 5000.
+            max_runs (int, optional): Number of iterations to simulate. Defaults to 15000.
         """
-        if folder == "":
-            folder = '{0:%Y-%m-%d-%H-%M-%S}'.format(datetime.datetime.now())
-        if os.path.exists(folder):
-            print(f"output folder {folder} already exists!")
-            sys.exit()   
-        os.mkdir(folder)
-
-
-        self.gamestate_history = []
+        self.game_data = []
+        l_score, r_score = 0, 0
 
         start_time = time.time()
-        l_score, r_score = 0, 0
         self.run = 0
+        biological_time = 0
 
+        logging.info(f"Starting simulation of {max_runs} iterations of {POLL_TIME}ms each.")
         while self.run < max_runs:
-            self.ball_cell = self.game.ball.get_cell()[1]
+            self.input_index = self.game.ball.get_cell()[1]
+            self.player1.set_input_spiketrain(self.input_index, biological_time)
+            self.player2.set_input_spiketrain(self.input_index, biological_time)
 
             if self.run % 100 == 0:
-                logging.info(f"{round(time.time() - start_time, 2)}: Run {self.run}, score: {l_score, r_score}, mean rewards: {round(np.mean(self.left_network.mean_reward), 3)}")#, {round(np.mean(self.right_network.mean_reward))}") 
-                weights = self.left_network.get_all_weights()
-                foo = generate_gif.grayscale_to_heatmap(weights, 0, 200, np.array([255, 0, 0]))
+                logging.info(f"{round(time.time() - start_time, 2)}: Run {self.run}, score: {l_score, r_score}, mean rewards: {round(np.mean(self.player1.mean_reward), 3), round(np.mean(self.player2.mean_reward), 3)}")
+                #TODO: remove
+                weights = self.player1.get_all_weights()
+                foo = generate_gif.grayscale_to_heatmap(
+                    weights, 1150, 1550, np.array([255, 0, 0]))
                 plt.imshow(foo)
                 plt.savefig(f"foo_{self.run}.png")
 
-            
-            if self.run % 200 == 0:
-                weights = self.left_network.get_all_weights()
-                #print(weights)
-                print(weights.mean())
-            
-
-            self.left_network.set_input_spiketrain(self.ball_cell, self.run)
-            #self.right_network.set_input_spiketrain(self.ball_cell, self.run)
-
             logging.debug("Running simulation...")
             nest.Simulate(POLL_TIME)
+            biological_time = nest.GetKernelStatus("biological_time")
 
-            for network, paddle in zip([self.left_network], [self.game.left_paddle]): #, self.right_network], [self.game.left_paddle, self.game.right_paddle]):
-                #network.set_input_spiketrain(self.ball_cell, self.run)
-                network.poll_network()
-                network.reward_by_move(self.run)
+            for network, paddle in zip([self.player1, self.player2], [self.game.left_paddle, self.game.right_paddle]):
+                network.apply_synaptic_plasticity(biological_time)
                 network.reset()
 
                 position_diff = network.winning_neuron - paddle.get_cell()[1]
@@ -86,13 +138,10 @@ class AIPong:
                     paddle.dont_move()
                 else:
                     paddle.move_down()
-            
+
             self.game.step()
-
             self.run += 1
-
-            self.gamestate_history.append((self.game.ball.get_pos(), self.game.left_paddle.get_pos(), self.game.right_paddle.get_pos(), (l_score, r_score)))
-            
+            self.game_data.append([self.game.ball.get_pos(), self.game.left_paddle.get_pos(), self.game.right_paddle.get_pos(), (l_score, r_score)])
 
             if self.game.result == pong.RIGHT_WIN:
                 self.game.reset_ball(False)
@@ -100,23 +149,33 @@ class AIPong:
             elif self.game.result == pong.LEFT_WIN:
                 self.game.reset_ball(True)
                 l_score += 1
-        
-        end_time = time.time()
-        logging.info(f"simulation of {max_runs} runs complete after: {datetime.timedelta(seconds=end_time-start_time)}")
 
+        end_time = time.time()
+        logging.info(
+            f"simulation of {max_runs} runs complete after: {datetime.timedelta(seconds=end_time-start_time)}")
+
+        self.game_data = np.array(self.game_data)
+
+        out_data = {}
+        out_data["ball_pos"] = self.game_data[:,0]
+        out_data["left_paddle"] = self.game_data[:,1]
+        out_data["right_paddle"] = self.game_data[:,2]
+        out_data["score"] = self.game_data[:,3]
 
         logging.info("saving game data...")
-        with open(os.path.join(folder, "gamestate.pkl"), "wb") as f:
-            pickle.dump(self.gamestate_history, f)
+        with open(os.path.join(self.out_dir, "gamestate.pkl"), "wb") as file:
+            pickle.dump(out_data, file)
 
+        logging.info("saving network data...")
 
-        logging.info("saving performance data...")
-        with gzip.open(os.path.join(folder, f"data_right.pkl.gz"), "w") as file:
-            pickle.dump(self.right_network.get_performance_data(), file)
-
-        with gzip.open(os.path.join(folder, f"data_left.pkl.gz"), "w") as file:
-            pickle.dump(self.left_network.get_performance_data(), file)
-
+        for net, filename in zip([self.player1, self.player2], ["data_left.pkl.gz", "data_right.pkl.gz"]):
+            with gzip.open(os.path.join(self.out_dir, filename), "w") as file:
+                output = {"network_type": repr(net)}
+                performance_data = net.get_performance_data()
+                output["rewards"] = performance_data[0]
+                output["weights"] = performance_data[1]
+                pickle.dump(output, file)
+       
         logging.info("done.")
 
 
@@ -126,15 +185,25 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs",
                         type=int,
-                        default=20000,
+                        default=15000,
                         help="Number of runs to perform.")
     parser.add_argument("--debug",
                         action="store_true",
                         help="Verbose debugging output.")
-    parser.add_argument("--folder",
+    parser.add_argument("--out_dir",
                         type=str,
                         default="",
-                        help="Folder to save experiments to.")
+                        help="Directory to save experiments to.")
+    parser.add_argument("--players",
+                        nargs=2,
+                        type=str,
+                        choices=["r", "rn", "d", "dn"],
+                        default=["r", "rn"],
+                        help="""types of networks that compete against each other. four learning rule configuations are available: 
+    r:  r-STDP without noise,
+    rn: r-STDP with noisy input,
+    d:  dopaminergic synapses without noise,
+    dn: dopaminergic synapses with noisy input.""")
 
     args = parser.parse_args()
 
@@ -143,5 +212,24 @@ if __name__ == "__main__":
     else:
         logging.basicConfig(level=logging.INFO)
 
-    aipong = AIPong()
-    aipong.run_games(max_runs=args.runs, folder=args.folder)
+    p1, p2 = args.players
+    if p1[0] == p2[0] == 'd':
+        logging.error("""Nest currently (v3.1) does not support addressing individual populations of dopaminergic synapses 
+because all of them recieve their signal from a single volume transmitter. For this reason, no two dopaminergic networks 
+can be trained simultaneously. One of the players needs to be changed to the r-STDP type.""")
+        sys.exit()
+
+    apply_noise = len(p1) > 1
+    if p1[0] == "r":
+        p1 = PongNetRSTDP(apply_noise)
+    else:
+        p1 = PongNetRSTDP(apply_noise)
+
+    apply_noise = len(p2) > 1
+    if p2[0] == "r":
+        p2 = PongNetDopa(apply_noise)
+    else:
+        p2 = PongNetDopa(apply_noise)
+
+    aipong = AIPong(p1, p2, args.out_dir)
+    aipong.run_games(max_runs=args.runs)

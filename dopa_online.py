@@ -1,55 +1,47 @@
 # %%
-import pong_net_dopa
 import nest
 from copy import copy
 import numpy as np
 nest.set_verbosity("M_WARNING")
 nest.ResetKernel()
 nest.SetKernelStatus({"rng_seed": 15})
-from pong_net_dopa import POLL_TIME, DOPA_ISI
+from networks import POLL_TIME, PongNetDopa
 from generate_gif import grayscale_to_heatmap
 import matplotlib.pyplot as plt
 
-max_runs = 4500
+
+#%%
+
+max_runs = 10000
 n_cells = 20
-net = pong_net_dopa.PongNet(n_cells)
+net = PongNetDopa(n_cells)
 
 spks = []
 el = []
 
+biol_time = 0
 for i in range(max_runs):
-    biol_time = nest.GetKernelStatus("biological_time")
 
     input_cell = np.random.randint(n_cells)
     net.set_input_spiketrain(input_cell, biol_time)
     nest.Simulate(POLL_TIME)
-    out_index = net.poll_network()
     biol_time = nest.GetKernelStatus("biological_time")
-    
+    rates = net.get_spike_counts()
 
-    if input_cell == out_index:
-        reward_spikes = 6
-    elif abs(input_cell-out_index) == 1:
-        reward_spikes = 2
-    elif abs(input_cell-out_index) == 2:
-        reward_spikes = 1
-    else:
-        reward_spikes = 0
-    """
+    target_rate = rates[input_cell]
+    mean_rate = max(sum(rates), 1)
 
-    """
+    reward_spikes = int((target_rate/mean_rate)* 30)
+    spks.append(reward_spikes)
+    if reward_spikes >= 6:
+        print(reward_spikes, rates)
 
+    #dopa_spiketrain = [biol_time + 1 + x * DOPA_ISI for x in range(reward_spikes)]
+    #net.dopa_signal.spike_times = dopa_spiketrain
+    net.apply_synaptic_plasticity(biol_time)
 
-    dopa_spiketrain = [biol_time + 1 + x * DOPA_ISI for x in range(reward_spikes)]
-    net.dopa_signal.spike_times = dopa_spiketrain
-    
-    #print(net.input_train)
-    #print(dopa_spiketrain)
-    nest.Simulate(50)
     net.reset()
-    
-    #net.reward_by_move(i)
-    
+
     el.append(np.median(nest.GetConnections(net.input_neurons).get("c")))
     spks.append(len(net.dopa_signal.spike_times))
     if i % 150 == 0:
