@@ -57,7 +57,7 @@ class AIPong:
             logging.debug("Running simulation...")
             nest.Simulate(POLL_TIME)
 
-            for network, paddle in zip([self.left_network, self.right_network], [self.game.left_paddle, self.game.right_paddle]):
+            for network, paddle in zip([self.left_network, self.right_network], [self.game.l_paddle, self.game.r_paddle]):
                 #network.set_input_spiketrain(self.ball_cell, self.run)
                 network.poll_network()
                 network.reward_by_move()
@@ -75,13 +75,13 @@ class AIPong:
 
             self.run += 1
 
-            self.gamestate_history.append((self.game.ball.get_pos(), self.game.left_paddle.get_pos(), self.game.right_paddle.get_pos(), l_score, r_score))
+            self.gamestate_history.append((self.game.ball.get_pos(), self.game.l_paddle.get_pos(), self.game.r_paddle.get_pos(), l_score, r_score))
             
 
-            if self.game.result == pong.RIGHT_WIN:
+            if self.game.result == pong.RIGHT_SCORE:
                 self.game.reset_ball(False)
                 r_score += 1
-            elif self.game.result == pong.LEFT_WIN:
+            elif self.game.result == pong.LEFT_SCORE:
                 self.game.reset_ball(True)
                 l_score += 1
         
