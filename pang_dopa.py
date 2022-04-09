@@ -19,7 +19,7 @@
 # You should have received a copy of the GNU General Public License
 # along with NEST.  If not, see <http://www.gnu.org/licenses/>.
 
-r"""Application training networks to play pong against each other 
+r"""Application training networks to play pong against each other
 ----------------------------------------------------------------
 This program makes two spiking neural networks of two layers each compete
 against each other in encoding an input-output mapping within their weights.
@@ -27,18 +27,18 @@ against each other in encoding an input-output mapping within their weights.
 The script is centered around a simulation of the classic game Pong
 in which the vertical position of the ball determines the input for both
 'players' and their output activation after a predetermined simulation
-time changes the paddle positions within the game. 
+time changes the paddle positions within the game.
 
 The output of the script is stored in three .pkl files which contain information
 about the state of the game, the left network and the right network respectively
-after every simulation step which can be used to visualize the output 
+after every simulation step which can be used to visualize the output
 (e.g. using :doc:`generate_gif.py <./generate_gif.py>`).
 
-The Idea for this simulation, as well as the core of the R-STDP and Pong 
-implementation are from [1]_ and were created by Timo Wunderlich (The original 
-implementation can be found 
-'here <https://github.com/electronicvisions/model-sw-pong>'_). 
-The visualization and implementation of dopaminergic learning, as well as 
+The Idea for this simulation, as well as the core of the R-STDP and Pong
+implementation are from [1]_ and were created by Timo Wunderlich (The original
+implementation can be found
+'here <https://github.com/electronicvisions/model-sw-pong>'_).
+The visualization and implementation of dopaminergic learning, as well as
 changes to the existing codebase come from Johannes Gille (2022).
 
 See Also
@@ -48,12 +48,12 @@ See Also
 
 References
 ----------
-.. [1] Wunderlich, T., Kungl, A. F., Müller, E., Hartel, A., Stradmann, Y., 
-       Aamir, S. A., ... & Petrovici, M. A. (2019). Demonstrating advantages of 
-       neuromorphic computation: a pilot study. Frontiers in neuroscience, 13, 
+.. [1] Wunderlich, T., Kungl, A. F., Müller, E., Hartel, A., Stradmann, Y.,
+       Aamir, S. A., ... & Petrovici, M. A. (2019). Demonstrating advantages of
+       neuromorphic computation: a pilot study. Frontiers in neuroscience, 13,
        260. https://doi.org/10.3389/fnins.2019.00260
 
-:Authors: J Gille
+:Authors: J Gille, T Wunderlich, Electronic Vision(s)
 """
 
 import nest
@@ -75,13 +75,13 @@ from networks import POLL_TIME, PongNetDopa,  PongNetRSTDP
 
 class AIPong:
     def __init__(self, p1, p2, out_dir=""):
-        """A class to run and store pong simulations of two competing spiking 
+        """A class to run and store pong simulations of two competing spiking
         neural networks
 
         Args:
             p1 (PongNet): network to play on the left side.
             p2 (PongNet): network to play on the right side.
-            out_folder (str, optional): name of the output folder. Defaults to 
+            out_folder (str, optional): name of the output folder. Defaults to
             current time stamp (YYYY-mm-dd-HH-MM-SS).
         """
         self.game = pong.GameOfPong()
@@ -102,7 +102,7 @@ class AIPong:
         """run a simulation of pong games and store the results
 
         Args:
-            max_runs (int, optional): Number of iterations to simulate. 
+            max_runs (int, optional): Number of iterations to simulate.
             Defaults to 15000.
         """
         self.game_data = []
@@ -112,12 +112,16 @@ class AIPong:
         self.run = 0
         biological_time = 0
 
-        logging.info(f"Starting simulation of {max_runs} iterations of"
+        logging.info(f"Starting simulation of {max_runs} iterations of "
                      f"{POLL_TIME}ms each.")
         while self.run < max_runs:
+            logging.debug("")
+            logging.debug(f"iteration {self.run}:")
             self.input_index = self.game.ball.get_cell()[1]
-            self.player1.set_input_spiketrain(self.input_index, biological_time)
-            self.player2.set_input_spiketrain(self.input_index, biological_time)
+            self.player1.set_input_spiketrain(
+                self.input_index, biological_time)
+            self.player2.set_input_spiketrain(
+                self.input_index, biological_time)
 
             if self.run % 100 == 0:
                 logging.info(
@@ -125,14 +129,6 @@ class AIPong:
                     f"{self.run}, score: {l_score, r_score}, mean rewards: "
                     f"{round(np.mean(self.player1.mean_reward), 3)}, "
                     f"{round(np.mean(self.player2.mean_reward), 3)}")
-                #TODO: remove
-                weights = self.player1.get_all_weights()
-                _min = min(weights.flatten())
-                _max = max(weights.flatten())
-                foo = generate_gif.grayscale_to_heatmap(
-                    weights, _min, _max, np.array([255, 0, 0]))
-                plt.imshow(foo)
-                plt.savefig(f"foo_{self.run}.png")
 
             logging.debug("Running simulation...")
             nest.Simulate(POLL_TIME)
@@ -206,20 +202,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--runs",
                         type=int,
-                        default=15000,
-                        help="Number of runs to perform.")
+                        default=5000,
+                        help="Number of game steps to simulate.")
     parser.add_argument("--debug",
                         action="store_true",
                         help="Verbose debugging output.")
     parser.add_argument("--out_dir",
                         type=str,
                         default="",
-                        help="Directory to save experiments to.")
+                        help="Directory to save experiments to. Defaults to \
+                        current time stamp (YYYY-mm-dd-HH-MM-SS)")
     parser.add_argument(
         "--players", nargs=2, type=str, choices=["r", "rn", "d", "dn"],
         default=["r", "rn"],
-        help="""types of networks that compete against each other. four 
-    learning rule configuations are available: 
+        help="""types of networks that compete against each other. four
+    learning rule configuations are available:
     r:  r-STDP without noise,
     rn: r-STDP with noisy input,
     d:  dopaminergic synapses without noise,
@@ -227,17 +224,17 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if args.debug:
-        logging.basicConfig(level=logging.DEBUG)
-    else:
-        logging.basicConfig(level=logging.INFO)
-
+    level = logging.DEBUG if args.debug else logging.INFO
+    format = '%(asctime)s - %(message)s',
+    datefmt = '%H:%M:%S'
+    logging.basicConfig(level=level, format=format, datefmt=datefmt)
+    
     p1, p2 = args.players
     if p1[0] == p2[0] == 'd':
-        logging.error("""Nest currently (v3.1) does not support addressing 
-        multiple populations of dopaminergic synapses because all of them 
-        recieve their signal from a single volume transmitter. For this reason, 
-        no two dopaminergic networks can be trained simultaneously. One of the 
+        logging.error("""Nest currently (v3.1) does not support addressing
+        multiple populations of dopaminergic synapses because all of them
+        recieve their signal from a single volume transmitter. For this reason,
+        no two dopaminergic networks can be trained simultaneously. One of the
         players needs to be changed to the R-STDP type.""")
         sys.exit()
 
