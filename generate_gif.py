@@ -247,7 +247,6 @@ if __name__ == "__main__":
             plt.rcParams["figure.autolayout"] = True
             plt.rcParams["font.size"] = 8
             # plt.xlabel("iteration")
-            plt.ylabel("mean reward")
             # Plot rewards for both players
             # set a constant figsize by pixel size
             DPI = 80
@@ -268,6 +267,7 @@ if __name__ == "__main__":
                 x_min = i-1600
                 ax.set_xticks(np.arange(0, sim_iterations, 500))
 
+            ax.set_ylabel("mean reward")
             ax.set_yticks([0, 0.5, 1])
             ax.set_ylim(0, 1.0)
             ax.set_xlim(x_min, i+10)
