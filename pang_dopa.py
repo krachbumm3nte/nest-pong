@@ -188,6 +188,7 @@ class AIPong:
                 ["data_left.pkl.gz", "data_right.pkl.gz"]):
             with gzip.open(os.path.join(self.out_dir, filename), "w") as file:
                 output = {"network_type": repr(net)}
+                output["with_noise"] = net.apply_noise
                 performance_data = net.get_performance_data()
                 output["rewards"] = performance_data[0]
                 output["weights"] = performance_data[1]
@@ -225,7 +226,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     level = logging.DEBUG if args.debug else logging.INFO
-    format = '%(asctime)s - %(message)s',
+    format = '%(asctime)s - %(message)s'
     datefmt = '%H:%M:%S'
     logging.basicConfig(level=level, format=format, datefmt=datefmt)
     

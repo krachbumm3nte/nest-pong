@@ -22,7 +22,8 @@
 r"""Classes for running simulations of the classic game Pong
 ----------------------------------------------------------------
 The Class GameOfPong contains all necessary functionality for running simple 
-simulations of Pong games. 
+simulations of Pong games. Its core function for the simulation is to provide
+pseudo-random inputs to the network and make the output more appealing.
 
 See Also
 ---------

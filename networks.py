@@ -22,8 +22,14 @@
 r"""An abstract network class implemented by R-STDP and dopaminergic networks
 ----------------------------------------------------------------
 In this file, two types of network are implemented.
-PongNetDopa can solve the Pong problem using dopaminergic synapses.
-PongNetRSTDP solves the same problem using static synapses and R-STDP.
+PongNetRSTDP can solve the Pong problem using static synapses and R-STDP. 
+
+PongNetDopa uses the actor-critic model described in [2]_ to determine the 
+amount of dopamine to send to the synapses between input and motor neurons. 
+In this framework, the motor neurons represent the actor, while a secondary
+network of three populations (termed striatum, VP and dopaminergic neurons)
+form the critic which modulates dopamine concentration based on Temporal
+difference error.
 
 Both of them inherit some functionality from the abstract base class
 PongNet.
@@ -39,6 +45,11 @@ References
        neuromorphic computation: a pilot study. Frontiers in neuroscience, 13, 
        260. https://doi.org/10.3389/fnins.2019.00260
 
+.. [2] Potjans, W., Diesmann, M., & Morrison, A. (2011). An imperfect 
+       dopaminergic error signal can drive temporal-difference learning. PLoS 
+       computational biology, 7(5), e1001133.
+       https://doi.org/10.1371/journal.pcbi.1001133
+
 :Authors: J Gille, T Wunderlich, Electronic Vision(s)
 """
 
@@ -51,13 +62,13 @@ from scipy.stats import binom
 from scipy.special import rel_entr
 
 
-#: int: Simulation time per iteration in milliseconds.
+# Simulation time per iteration in milliseconds.
 POLL_TIME = 200
-#: int: Number of spikes in an input spiketrain per iteration.
+# Number of spikes in an input spiketrain per iteration.
 N_INPUT_SPIKES = 20
-#: float: Inter-Spike Interval (ISI) of input spiketrain.
+# Inter-Spike Interval (ISI) of input spiketrain.
 ISI = 10.
-#: float: Standard deviation of Gaussian current noise in picoampere.
+# Standard deviation of Gaussian current noise in picoampere.
 BG_STD = 220.
 
 
@@ -109,7 +120,7 @@ class PongNet(ABC):
         x_offset = self.input_neurons[0].get("global_id")
         y_offset = self.motor_neurons[0].get("global_id")
         weight_matrix = np.zeros((self.num_neurons, self.num_neurons))
-        conns = nest.GetConnections(self.input_neurons)
+        conns = nest.GetConnections(self.input_neurons, self.motor_neurons)
         for conn in conns:
             source, target, weight = conn.get(
                 ["source", "target", "weight"]).values()
@@ -186,6 +197,27 @@ class PongNet(ABC):
         # If multiple neurons have the same activation, one is chosen at random
         return int(np.random.choice(np.flatnonzero(spikes == spikes.max())))
 
+    def calculate_reward(self):
+        self.winning_neuron = self.get_max_activation()
+        distance = np.abs(self.winning_neuron - self.target_index)
+
+        if distance in self.rewards_dict:
+            bare_reward = self.rewards_dict[distance]
+        else:
+            bare_reward = 0
+
+        reward = bare_reward - self.mean_reward[self.target_index]
+
+        self.mean_reward[self.target_index] = float(
+            self.mean_reward[self.target_index] + reward / 2.0)
+        
+        logging.debug(f"Applying reward={reward}")
+        logging.debug(
+            f"Average reward across all neurons: {np.mean(self.mean_reward)}")
+
+        return reward
+
+
     def get_performance_data(self):
         """retrieve the performance of the network across all simulations
 
@@ -208,105 +240,119 @@ class PongNet(ABC):
 
 class PongNetDopa(PongNet):
 
-    # Offset for input spikes in every iteration in milliseconds. This offset
+    # Base reward current that is applied regardless of performance.
+    baseline_reward = 100.
+    # maximum reward current to be applied to the dopaminergic neurons
+    max_reward = 1000
+    # constant scaling factor for determining the current to be applied to the
+    # dopaminergic neurons
+    dopa_signal_factor = 4800
+    # Offset for input spikes at every iteration in milliseconds. This offset
     # reserves the first part of every simulation step for the application of
     # the dopaminergic reward signal, avoiding interference between them and the
     # spikes caused by the input.
     input_t_offset = 32
-    # factor for determining the number of dopaminergic spikes to be applied
-    dopa_signal_factor = 37
-    # maximum number of dopaminergic spikes per iteration
-    max_dopa_spikes = 10
-    # ISI for the dopaminergic spike train
-    dopa_isi = 1.5
-    #: float: Initial mean weight for synapses between input- and motor neurons.
-    mean_weight = 1235.0
+
+    # Neuron and synapse parameters:
+    # Initial mean weight for synapses between input- and motor neurons.
+    mean_weight = 1275.0
+    # standard deviation for starting weights.
+    weight_std = 8
+    # number of neurons per population in the critic-network.
+    n_critic = 8
+    # synaptic weights from striatum and VP to the dopaminergic neurons.
+    w_da = -1150
+    # synaptic weight between striatum and VP-
+    w_str_vp = -250
+    # synaptic delay for the direct connection between striatum and 
+    # dopaminergic neurons.
+    d_dir = 200
+    # rate (Hz) for the background poisson generators.
+    poisson_rate = 15
+
+
 
     def __init__(self, apply_noise=True, num_neurons=20):
         super().__init__(apply_noise, num_neurons)
 
-        self.dopa_signal = nest.Create("spike_generator")
-        self.dopa_parrot = nest.Create("parrot_neuron")
-        nest.Connect(self.dopa_signal, self.dopa_parrot)
-
         self.vt = nest.Create("volume_transmitter")
-        nest.Connect(self.dopa_parrot, self.vt)
-
         nest.SetDefaults("stdp_dopamine_synapse",
                          {"vt": self.vt.get("global_id"),
-                          "tau_c": 80, "tau_n": 30, "tau_plus": 40,
-                          "Wmin": 1150, "Wmax": 1550,
+                          "tau_c": 70, "tau_n": 30, "tau_plus": 45,
+                          "Wmin": 1220, "Wmax": 1550,
                           "b": 0.028, "A_plus": 0.85})
 
         if apply_noise:
             nest.Connect(self.input_neurons, self.motor_neurons,
                          {'rule': 'all_to_all'},
                          {"synapse_model": "stdp_dopamine_synapse",
-                          "weight": nest.random.normal(self.mean_weight, 15)})
-            self.background_generator = nest.Create("noise_generator",
-                                                    self.num_neurons,
-                                                    params={"std": BG_STD})
-            nest.Connect(self.background_generator,
-                         self.motor_neurons, {'rule': 'one_to_one'})
+                          "weight": nest.random.normal(self.mean_weight,
+                                                       self.weight_std)})
+            self.poisson_noise = nest.Create("poisson_generator",
+                                             self.num_neurons,
+                                             params={"rate":
+                                                     self.poisson_rate})
+            nest.Connect(self.poisson_noise,
+                         self.motor_neurons, {'rule': 'one_to_one'},
+                         {"weight": self.mean_weight})
         else:
             # because the noise_generators cause adtitional spikes in the motor
             # neurons, it is necessary to compensate for their absence by
             # slightly increasing the mean of the weights between input and
             # motor neurons to achieve similar spiking rates.
-            nest.SetDefaults("stdp_dopamine_synapse",
-                             {"Wmin": 1150, "Wmax": 1750})
+            nest.SetDefaults("stdp_dopamine_synapse", {"Wmax": 1750})
             nest.Connect(self.input_neurons, self.motor_neurons,
                          {'rule': 'all_to_all'},
                          {"synapse_model": "stdp_dopamine_synapse",
                           "weight": nest.random.normal(
-                              self.mean_weight*1.3, 15)})
+                              self.mean_weight*1.3, self.weight_std)})
+
+        # Setup the 'critic' as a network of three populations.
+
+        self.striatum = nest.Create("iaf_psc_exp", self.n_critic)
+        nest.Connect(self.input_neurons, self.striatum, {'rule': 'all_to_all'},
+                     {"synapse_model": "stdp_dopamine_synapse",
+                      "weight": nest.random.normal(self.mean_weight,
+                                                   self.weight_std)})
+        self.vp = nest.Create("iaf_psc_exp", self.n_critic)
+        nest.Connect(self.striatum, self.vp, syn_spec={"weight": self.w_str_vp})
+        self.dopa = nest.Create("iaf_psc_exp", self.n_critic)
+        nest.Connect(self.vp, self.dopa, syn_spec={"weight": self.w_da})
+        nest.Connect(self.striatum, self.dopa, syn_spec={
+                     "weight": self.w_da, "delay": self.d_dir})
+        nest.Connect(self.dopa, self.vt)
+
+        # Current generator to stimulate dopaminergic neurons based on 
+        # network performance.
+        self.dopa_current = nest.Create("dc_generator")
+        nest.Connect(self.dopa_current, self.dopa)
 
     def apply_synaptic_plasticity(self, biological_time):
-        """ inject dopaminergic spikes into the network based on the proportion 
-        of the motor neurons' spikes that stem from the desired output 
+        """ inject a current into the dopaminergic neurons based on how much of
+        the motor neurons' activity stems from the desired output.
         """
 
         spike_counts = self.get_spike_counts()
-        self.winning_neuron = self.get_max_activation()
         target_n_spikes = spike_counts[self.target_index]
         # avoid zero division if none of the neurons fired
         total_n_spikes = max(sum(spike_counts), 1)
 
-        n_dopa_spikes = int((target_n_spikes/total_n_spikes)
-                            * self.dopa_signal_factor)
+        reward_current = self.dopa_signal_factor * target_n_spikes / \
+            total_n_spikes + self.baseline_reward
 
         # clip the dopaminergic signal to avoid runaway synaptic weights
-        n_dopa_spikes = min(n_dopa_spikes, self.max_dopa_spikes) + 2
-        """
+        reward_current = min(reward_current, self.max_reward)
 
-        spike_counts = spike_counts + 0.0001
-        spike_frequencies = spike_counts / sum(spike_counts)
+        self.dopa_current.stop = biological_time + self.input_t_offset
+        self.dopa_current.start = biological_time
 
-        p = self.target_index/(self.num_neurons-1)
-        n = self.num_neurons
-        desired_freqs = [binom.pmf(r, n-1, p) for r in range(n)]
+        self.dopa_current.amplitude = reward_current
 
-        kl_divergence = sum(rel_entr(desired_freqs, spike_frequencies))
-        dopa_scale = 22
-        n_dopa_spikes = int(dopa_scale/kl_divergence)
-        print(n_dopa_spikes)
-        n_dopa_spikes = min(self.max_dopa_spikes, n_dopa_spikes)
-        """
-        # set the dopaminergic spike train for the next simulation step
-        dopa_spiketrain = [biological_time + 1 +
-                           x * self.dopa_isi for x in range(n_dopa_spikes)]
-        self.dopa_signal.spike_times = dopa_spiketrain
-
-        reward = n_dopa_spikes / self.max_dopa_spikes
         self.mean_reward[self.target_index] = (
-            self.mean_reward[self.target_index] + reward) / 2
+            self.mean_reward[self.target_index] + reward_current) / 2
 
         self.weight_history.append(copy(self.get_all_weights()))
-        self.mean_reward_history.append(copy(self.mean_reward))
-
-        logging.debug(f"Applying reward={reward}")
-        logging.debug(
-            f"Average reward across all neurons: {np.mean(self.mean_reward)}")
+        self.calculate_reward()
 
     def __repr__(self) -> str:
         return "Dopaminergic STDP network" + (
@@ -315,19 +361,19 @@ class PongNetDopa(PongNet):
 
 class PongNetRSTDP(PongNet):
 
-    #: int: Offset for input spikes in every iteration in milliseconds.
+    # Offset for input spikes in every iteration in milliseconds.
     input_t_offset = 1
-    #: float: Learning rate to use in weight updates.
+    # Learning rate to use in weight updates.
     learning_rate = 0.7
-    #: dict: reward to be applied depending on the prediction loss.
+    # reward to be applied depending on distance to target neuron.
     rewards_dict = {0: 1., 1: 0.7, 2: 0.4, 3: 0.1}
-    #: float: Amplitude of STDP curve in arbitrary units.
+    # Amplitude of STDP curve in arbitrary units.
     stdp_amplitude = 36.0
-    #: float: Time constant of STDP curve in milliseconds.
+    # Time constant of STDP curve in milliseconds.
     stdp_tau = 64.
-    #: int: Satuation value for accumulated STDP.
+    # Satuation value for accumulated STDP.
     stdp_saturation = 128
-    #: float: Initial mean weight for synapses between input- and motor neurons.
+    # Initial mean weight for synapses between input- and motor neurons.
     mean_weight = 1300.0
 
     def __init__(self, apply_noise=True, num_neurons=20):
@@ -350,36 +396,23 @@ class PongNetRSTDP(PongNet):
             # motor neurons to achieve similar spiking rates.
             nest.Connect(self.input_neurons, self.motor_neurons,
                          {'rule': 'all_to_all'},
-                         {"weight": nest.random.normal(self.mean_weight*1.22, 5)})
+                         {"weight": nest.random.normal(
+                             self.mean_weight*1.22, 5)})
 
     def apply_synaptic_plasticity(self, biological_time):
         """ Reward network based on how close winning and correct neuron are.
         """
-        self.winning_neuron = self.get_max_activation()
-        distance = np.abs(self.winning_neuron - self.target_index)
 
-        if distance in self.rewards_dict:
-            bare_reward = self.rewards_dict[distance]
-        else:
-            bare_reward = 0
-
-        reward = bare_reward - self.mean_reward[self.target_index]
-
-        self.mean_reward[self.target_index] = float(
-            self.mean_reward[self.target_index] + reward / 2.0)
-
-        self.apply_reward(reward)
+        reward = self.calculate_reward()
+        self.apply_rstdp(reward)
 
         self.weight_history.append(self.get_all_weights())
         self.mean_reward_history.append(copy(self.mean_reward))
 
-        logging.debug(
-            f"Winning neuron: {self.winning_neuron}, distance: {distance}")
-        logging.debug(f"Applying reward={reward}")
-        logging.debug(
-            f"Average reward across all neurons: {np.mean(self.mean_reward)}")
 
-    def apply_reward(self, reward):
+
+
+    def apply_rstdp(self, reward):
         """apply the previously calculated reward to all relevant synapses 
         according to R-STDP principle
 
@@ -393,7 +426,8 @@ class PongNetRSTDP(PongNet):
         for index, event in enumerate(self.spike_recorder.get("events")):
             post_events[offset + index] = event["times"]
 
-        # iterate over all connections from the stimulated neuron and apply STDP
+        # iterate over all connections from the stimulated neuron and change
+        # their weights dependent on spike time correlation and reward.
         for connection in nest.GetConnections(
                 self.input_neurons[self.target_index]):
             motor_neuron = connection.get("target")
@@ -408,10 +442,12 @@ class PongNetRSTDP(PongNet):
         """Calculates the STDP trace for given spike trains.
 
         Args:
-            pre_spikes (list, numpy.array): Presynaptic spike times in milliseconds.
-            post_spikes (list, numpy.array): Postsynaptic spike times in milliseconds.
-            only_causal (bool, optional): Use only causal part.. Defaults to True.
-            next_neighbor (bool, optional): Use only next-neighbor coincidences.. Defaults to True.
+            pre_spikes (list, numpy.array): Presynaptic spike times in ms.
+            post_spikes (list, numpy.array): Postsynaptic spike times in ms.
+            only_causal (bool, optional): Use only facilitation and not 
+            depression. Defaults to True.
+            next_neighbor (bool, optional): Use only next-neighbor 
+            coincidences. Defaults to True.
 
         Returns:
             [float]: Scalar that corresponds to accumulated STDP trace.
