@@ -131,6 +131,7 @@ def grayscale_to_heatmap(in_image, min_val, max_val, base_color):
             out_image[i, j, :] = base_color + (white-base_color) * val
     return out_image
 
+
 if __name__ == "__main__":
 
     if len(sys.argv) != 2:
@@ -150,13 +151,10 @@ if __name__ == "__main__":
     else:
         os.mkdir(temp_dir)
 
-
     font_prop = font_manager.FontProperties(family="sans")
     font_name = font_manager.findfont(font_prop)
     font_large = ImageFont.truetype(font_name, 26, encoding="unic")
     font_medium = ImageFont.truetype(font_name, 18, encoding="unic")
-    
-
 
     print(f"reading game data from {input_folder}...")
     with open(os.path.join(input_folder, "gamestate.pkl"), 'rb') as f:
@@ -182,7 +180,7 @@ if __name__ == "__main__":
         weights_right = data["weights"]
         p2_name = data["network_type"]
 
-    # extract lowest and highest weights for both players to scale the heatmaps 
+    # extract lowest and highest weights for both players to scale the heatmaps
     min_r, max_r = np.min(weights_right), np.max(weights_right)
     min_l, max_l = np.min(weights_left), np.max(weights_left)
 
@@ -226,11 +224,10 @@ if __name__ == "__main__":
             plt.close()
 
             # Right player heatmap
-            # convert weight to heatmap value
             heatmap_r = grayscale_to_heatmap(weights_right[i], min_r,
                                              max_r, right_color)
             heatmap_r = np.kron(heatmap_r, np.ones(
-                (HEATMAP_SCALE, HEATMAP_SCALE, 1), np.uint8))  # scale up array
+                (HEATMAP_SCALE, HEATMAP_SCALE, 1), np.uint8))
             heatmap_r = Image.fromarray(heatmap_r)
 
             # Left player heatmap
@@ -242,8 +239,7 @@ if __name__ == "__main__":
 
             plt.rcParams["figure.autolayout"] = True
             plt.rcParams["font.size"] = 8
-            # plt.xlabel("iteration")
-            # Plot rewards for both players
+
             # set a constant figsize by pixel size
             DPI = 80
             fig = plt.figure(facecolor=background_hex,
@@ -264,6 +260,7 @@ if __name__ == "__main__":
                 ax.set_xticks(np.arange(0, sim_iterations, 500))
 
             ax.set_ylabel("mean reward")
+            # ax.set_xlabel("iteration")
             ax.set_yticks([0, 0.5, 1])
             ax.set_ylim(0, 1.0)
             ax.set_xlim(x_min, i+10)
@@ -283,9 +280,12 @@ if __name__ == "__main__":
         background.paste(reward_plot, (95, 200))
 
         image_center = int(IMAGE_SIZE[0]/2)
-        draw.text((image_center - 25, 10), p1_name, tuple(left_color), font_medium, anchor = "rt")
-        draw.text((image_center, 10), "VS", tuple(black), font_medium, anchor="mt")
-        draw.text((image_center + 25, 10), p2_name, tuple(right_color), font_medium, anchor="lt")
+        draw.text((image_center - 25, 10), p1_name,
+                  tuple(left_color), font_medium, anchor="rt")
+        draw.text((image_center, 10), "VS", tuple(
+            black), font_medium, anchor="mt")
+        draw.text((image_center + 25, 10), p2_name,
+                  tuple(right_color), font_medium, anchor="lt")
 
         l_score, r_score = score[i]
         draw.text((20, 110), str(l_score), tuple(black), font_large)
@@ -299,7 +299,7 @@ if __name__ == "__main__":
 
         background.save(os.path.join(temp_dir, f"img_{str(i).zfill(6)}.png"))
 
-        # change the speed of the video to show performance before and after 
+        # change the speed of the video to show performance before and after
         # training at DEFAULT_SPEED and fast forward most of the training
         if 75 <= i < 100 or sim_iterations - 300 <= i < sim_iterations - 250:
             output_speed = 10

@@ -227,7 +227,7 @@ if __name__ == "__main__":
     format = '%(asctime)s - %(message)s'
     datefmt = '%H:%M:%S'
     logging.basicConfig(level=level, format=format, datefmt=datefmt)
-    
+
     p1, p2 = args.players
     if p1[0] == p2[0] == 'd':
         logging.error("""Nest currently (v3.1) does not support addressing

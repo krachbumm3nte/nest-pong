@@ -73,6 +73,7 @@ BG_STD = 220.
 # reward to be applied depending on distance to target neuron.
 REWARDS_DICT = {0: 1., 1: 0.7, 2: 0.4, 3: 0.1}
 
+
 class PongNet(ABC):
 
     def __init__(self, apply_noise=True, num_neurons=20):
@@ -205,7 +206,7 @@ class PongNet(ABC):
 
         self.mean_reward[self.target_index] = float(
             self.mean_reward[self.target_index] + reward / 2.0)
-        
+
         logging.debug(f"Applying reward={reward}")
         logging.debug(
             f"Average reward across all neurons: {np.mean(self.mean_reward)}")
@@ -214,7 +215,6 @@ class PongNet(ABC):
         self.mean_reward_history.append(copy(self.mean_reward))
 
         return reward
-
 
     def get_performance_data(self):
         """retrieve the performance of the network across all simulations
@@ -262,13 +262,11 @@ class PongNetDopa(PongNet):
     w_da = -1150
     # synaptic weight between striatum and VP-
     w_str_vp = -250
-    # synaptic delay for the direct connection between striatum and 
+    # synaptic delay for the direct connection between striatum and
     # dopaminergic neurons.
     d_dir = 200
     # rate (Hz) for the background poisson generators.
     poisson_rate = 15
-
-
 
     def __init__(self, apply_noise=True, num_neurons=20):
         super().__init__(apply_noise, num_neurons)
@@ -306,7 +304,7 @@ class PongNetDopa(PongNet):
                               self.mean_weight*1.3, self.weight_std)})
 
         # Setup the 'critic' as a network of three populations, consisting of
-        # the striatum, ventral pallidum (vp) and dopaminergic neurons. 
+        # the striatum, ventral pallidum (vp) and dopaminergic neurons.
         self.striatum = nest.Create("iaf_psc_exp", self.n_critic)
         nest.Connect(self.input_neurons, self.striatum, {'rule': 'all_to_all'},
                      {"synapse_model": "stdp_dopamine_synapse",
@@ -320,7 +318,7 @@ class PongNetDopa(PongNet):
                      "weight": self.w_da, "delay": self.d_dir})
         nest.Connect(self.dopa, self.vt)
 
-        # Current generator to stimulate dopaminergic neurons based on 
+        # Current generator to stimulate dopaminergic neurons based on
         # network performance.
         self.dopa_current = nest.Create("dc_generator")
         nest.Connect(self.dopa_current, self.dopa)
@@ -396,9 +394,6 @@ class PongNetRSTDP(PongNet):
 
         reward = self.calculate_reward()
         self.apply_rstdp(reward)
-
-
-
 
     def apply_rstdp(self, reward):
         """apply the previously calculated reward to all relevant synapses 
