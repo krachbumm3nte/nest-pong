@@ -67,8 +67,6 @@ import os
 import logging
 import gzip
 import datetime
-import matplotlib.pyplot as plt
-import generate_gif
 
 from networks import POLL_TIME, PongNetDopa,  PongNetRSTDP
 
