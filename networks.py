@@ -70,7 +70,8 @@ N_INPUT_SPIKES = 20
 ISI = 10.
 # Standard deviation of Gaussian current noise in picoampere.
 BG_STD = 220.
-
+# reward to be applied depending on distance to target neuron.
+REWARDS_DICT = {0: 1., 1: 0.7, 2: 0.4, 3: 0.1}
 
 class PongNet(ABC):
 
@@ -172,12 +173,6 @@ class PongNet(ABC):
         # round spike timings to 0.1ms to avoid conflicts with simulation time
         self.input_train = [np.round(x, 1) for x in self.input_train]
 
-        # TODO: why doesnt this work?
-        """
-        self.input_generators.spike_times = []
-        self.input_generators[input_cell].spike_times = self.input_train
-        """
-
         for input_neuron in range(self.num_neurons):
             nest.SetStatus(self.input_generators[input_neuron],
                            {'spike_times': []})
@@ -201,8 +196,8 @@ class PongNet(ABC):
         self.winning_neuron = self.get_max_activation()
         distance = np.abs(self.winning_neuron - self.target_index)
 
-        if distance in self.rewards_dict:
-            bare_reward = self.rewards_dict[distance]
+        if distance in REWARDS_DICT:
+            bare_reward = REWARDS_DICT[distance]
         else:
             bare_reward = 0
 
@@ -214,6 +209,9 @@ class PongNet(ABC):
         logging.debug(f"Applying reward={reward}")
         logging.debug(
             f"Average reward across all neurons: {np.mean(self.mean_reward)}")
+
+        self.weight_history.append(self.get_all_weights())
+        self.mean_reward_history.append(copy(self.mean_reward))
 
         return reward
 
@@ -307,8 +305,8 @@ class PongNetDopa(PongNet):
                           "weight": nest.random.normal(
                               self.mean_weight*1.3, self.weight_std)})
 
-        # Setup the 'critic' as a network of three populations.
-
+        # Setup the 'critic' as a network of three populations, consisting of
+        # the striatum, ventral pallidum (vp) and dopaminergic neurons. 
         self.striatum = nest.Create("iaf_psc_exp", self.n_critic)
         nest.Connect(self.input_neurons, self.striatum, {'rule': 'all_to_all'},
                      {"synapse_model": "stdp_dopamine_synapse",
@@ -348,15 +346,10 @@ class PongNetDopa(PongNet):
 
         self.dopa_current.amplitude = reward_current
 
-        self.mean_reward[self.target_index] = (
-            self.mean_reward[self.target_index] + reward_current) / 2
-
-        self.weight_history.append(copy(self.get_all_weights()))
         self.calculate_reward()
 
     def __repr__(self) -> str:
-        return "Dopaminergic STDP network" + (
-            " with noise" if self.apply_noise else "")
+        return ("noisy " if self.apply_noise else "clean ") + "TD"
 
 
 class PongNetRSTDP(PongNet):
@@ -365,8 +358,6 @@ class PongNetRSTDP(PongNet):
     input_t_offset = 1
     # Learning rate to use in weight updates.
     learning_rate = 0.7
-    # reward to be applied depending on distance to target neuron.
-    rewards_dict = {0: 1., 1: 0.7, 2: 0.4, 3: 0.1}
     # Amplitude of STDP curve in arbitrary units.
     stdp_amplitude = 36.0
     # Time constant of STDP curve in milliseconds.
@@ -405,9 +396,6 @@ class PongNetRSTDP(PongNet):
 
         reward = self.calculate_reward()
         self.apply_rstdp(reward)
-
-        self.weight_history.append(self.get_all_weights())
-        self.mean_reward_history.append(copy(self.mean_reward))
 
 
 
@@ -476,4 +464,4 @@ class PongNetRSTDP(PongNet):
             return min(facilitation - depression, self.stdp_saturation)
 
     def __repr__(self) -> str:
-        return "r-STDP network" + (" with noise" if self.apply_noise else "")
+        return ("noisy " if self.apply_noise else "clean ") + "R-STDP"

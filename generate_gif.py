@@ -46,6 +46,8 @@ from copy import copy
 import pong
 import imageio
 from glob import glob
+from matplotlib import font_manager
+
 
 # base colors used in the plot
 background_color = (220, 220, 220)  # grey
@@ -149,15 +151,11 @@ if __name__ == "__main__":
         os.mkdir(temp_dir)
 
 
-    font_name = "DejaVuSansCondensed.ttf"
-    try:
-        font_large = ImageFont.truetype(font_name, 26, encoding="unic")
-        font_medium = ImageFont.truetype(font_name, 18, encoding="unic")
-    except OSError:
-        print(
-            f"Could not find font <{font_name}>, falling back to default font.")
-        font_large = ImageFont.load_default()
-        font_medium = ImageFont.load_default()
+    font_prop = font_manager.FontProperties(family="sans")
+    font_name = font_manager.findfont(font_prop)
+    font_large = ImageFont.truetype(font_name, 26, encoding="unic")
+    font_medium = ImageFont.truetype(font_name, 18, encoding="unic")
+    
 
 
     print(f"reading game data from {input_folder}...")
@@ -176,14 +174,13 @@ if __name__ == "__main__":
         data = pickle.load(f)
         rewards_left = data["rewards"]
         weights_left = data["weights"]
-        p1_name = "noisy input" if data["with_noise"] else "clean input"
+        p1_name = data["network_type"]
 
     with gzip.open(os.path.join(input_folder, "data_right.pkl.gz"), 'r') as f:
         data = pickle.load(f)
         rewards_right = data["rewards"]
         weights_right = data["weights"]
-        p2_name = "noisy input" if data["with_noise"] else "clean input"
-
+        p2_name = data["network_type"]
 
     # extract lowest and highest weights for both players to scale the heatmaps 
     min_r, max_r = np.min(weights_right), np.max(weights_right)
@@ -213,7 +210,6 @@ if __name__ == "__main__":
 
         for (x, y), color in zip([l_paddle_positions[i], r_paddle_positions[i]],
                                  [left_color, right_color]):
-            #TODO: clip
             y = max(PADDLE_LEN, y)
             y = min(FIELD_IMAGE_SIZE[1] - PADDLE_LEN, y)
             playing_field[x:x+PADDLE_WID, y-PADDLE_LEN:y+PADDLE_LEN] = color
@@ -286,19 +282,20 @@ if __name__ == "__main__":
 
         background.paste(reward_plot, (95, 200))
 
-        draw.text((75, 10), p1_name, tuple(left_color), font_medium)
-        draw.text((188, 10), "VS", tuple(black), font_medium)
-        draw.text((235, 10), p2_name, tuple(right_color), font_medium)
+        image_center = int(IMAGE_SIZE[0]/2)
+        draw.text((image_center - 25, 10), p1_name, tuple(left_color), font_medium, anchor = "rt")
+        draw.text((image_center, 10), "VS", tuple(black), font_medium, anchor="mt")
+        draw.text((image_center + 25, 10), p2_name, tuple(right_color), font_medium, anchor="lt")
 
         l_score, r_score = score[i]
-        draw.text((20, 100), str(l_score), tuple(black), font_large)
-        draw.text((350, 100), str(r_score), tuple(black), font_large)
+        draw.text((20, 110), str(l_score), tuple(black), font_large)
+        draw.text((350, 110), str(r_score), tuple(black), font_large)
 
-        draw.text((10, 5), "run:", tuple(black), font_medium)
-        draw.text((10, 30), str(i), tuple(black), font_medium)
+        draw.text((10, 35), "run:", tuple(black), font_medium)
+        draw.text((10, 60), str(i), tuple(black), font_medium)
 
-        draw.text((345, 5), f"speed:", tuple(black), font_medium)
-        draw.text((345, 30), str(output_speed)+'x', tuple(black), font_medium)
+        draw.text((345, 35), f"speed:", tuple(black), font_medium)
+        draw.text((345, 60), str(output_speed)+'x', tuple(black), font_medium)
 
         background.save(os.path.join(temp_dir, f"img_{str(i).zfill(6)}.png"))
 
